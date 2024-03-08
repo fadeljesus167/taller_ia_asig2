@@ -1,5 +1,6 @@
 class DotsBoxes
   attr_accessor :rows, :columns, :play_dict, :score_dict
+  attr_accessor :a_score, :b_score
   def initialize(rows, columns)
     @rows = rows
     @columns = columns
@@ -27,6 +28,9 @@ class DotsBoxes
         @score_dict[box] = 0
       end
     end
+
+    @a_score = 0
+    @b_score = 0
   end
 
   def render_row(row_number)
@@ -105,13 +109,141 @@ class DotsBoxes
     player = player_a ? "A" : "B"
 
     taken_set = []
+    open_scores = []
+
     play_dict.each do |pair|
-      puts play_dict[pair]
+      #puts play_dict[pair]
       if play_dict[pair].eql?(0)
         taken_set << pair
       end
     end
-    puts taken_set.inspect
+
+    score_dict.each do |element|
+      if score_dict[element].eql?(0)
+        open_scores << element
+      end
+    end
+
+    score_counter = 0
+
+    open_scores.each do |open|
+      if taken_set.contains(open)
+        score_counter += 1
+        score_dict[open] = player_a
+      end
+    end
+
+    return score_counter
+    #puts taken_set.inspect
+  end
+
+  def make_play(start_point, end_point, player)
+    if play_dict[[start_point, end_point]].eql?(1)
+      return false
+    end
+
+    play_dict[[start_point, end_point]] = 1
+    score = check_scores(player)
+
+    if player.eql?("A")
+      a_score = a_score.to_i + score
+    else
+      b_score = b_score.to_i + score
+    end
+
+    return true
+  end
+
+  def get_open_plays
+    open_plays = []
+    play_dict.each do |play|
+      if play_dict[play].eql?(0)
+        open_plays << play
+      end
+    end
+    return open_plays
+  end
+
+  def is_over
+    return (a_score + b_score).eql?(score_dict.length)
+  end
+end
+
+class HumanPlayer
+  attr_accessor :player
+  def initialize(player)
+    @player = player
+  end
+
+  def make_play(game)
+    while true
+      puts "Escribe tu jugada de la siguiente forma (Punto_inicio Punto_final): "
+      play = gets.chomp.split(" ").map {|point| point.to_i}
+
+      valid_play = game.make_play(*play, player)
+      if valid_play
+        puts "Jugada valida"
+      end
+    end
+  end
+end
+
+class AlphaBetaPlayer
+  attr_reader :player
+
+  def initialize(player_a)
+    @player = player_a
+  end
+
+  def alphabeta(game, play, depth, alpha, beta, player_a)
+    return (game.current_player_score(@player) - game.current_player_score(!@player), play) if game.is_over || depth == 0
+
+    value = player_a ? -Float::INFINITY : Float::INFINITY
+    game.get_open_plays.each do |move|
+      new_game = game.dup  # Deep copy of the game state
+      old_score = game.current_player_score(player_a)
+      new_game.make_play(*move, player_a)
+      new_score = game.current_player_score(player_a)
+
+      if new_score == old_score
+        new_play_results = alphabeta(new_game, move, depth - 1, alpha, beta, !player_a)
+      else
+        new_play_results = alphabeta(new_game, move, depth - 1, alpha, beta, player_a)
+      end
+
+      if player_a
+        value = [value, new_play_results[0]].max
+        alpha = [alpha, value].max
+      else
+        value = [value, new_play_results[0]].min
+        beta = [beta, value].min
+      end
+
+      break if beta <= alpha
+    end
+
+    return value, play
+  end
+
+  def make_play(game)
+    start_time = Time.now
+
+    play_space_size = game.get_open_plays.size
+    play = game.get_open_plays.sample if play_space_size == 1
+    game.make_play(*play, @player) if play
+
+    depth = Math.log(19000, play_space_size).floor
+
+    play = alphabeta(game, (0, 0), depth, -Float::INFINITY, Float::INFINITY, @player)[1]
+    elapsed = Time.now - start_time
+
+    play = game.get_open_plays.sample unless play  # Fallback random move
+
+    game.make_play(*play, @player)
+
+    player_name = @player ? 'A' : 'B'
+    puts "Player #{player_name}'s move: #{play[0]}, #{play[1]}"
+    puts "Time elapsed to make move: #{elapsed}"
   end
 end
 
@@ -128,6 +260,8 @@ class Game
     game = DotsBoxes.new(rows, columns)
     game.render()
     game.check_scores(player_a)
+    player = HumanPlayer.new("A")
+    player.make_play(game)
   end
 end
 
@@ -136,5 +270,5 @@ game_rows = gets.chomp.to_i
 puts "Ingresa la cantidad de columnas"
 game_columns = gets.chomp.to_i
 
-game = Game.new("Fadel", "AI", game_rows, game_columns)
+game = Game.new("A", "B", game_rows, game_columns)
 game.play_game
