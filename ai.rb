@@ -102,12 +102,10 @@ class DotsBoxes
       render_middle_row(row_number)
     end
 
-    #puts "Score dict: #{score_dict}\n\nPlay dict: #{play_dict}"
+    puts "Score dict: #{score_dict}\n\nPlay dict: #{play_dict}"
   end
 
-  def check_scores(player_a)
-    player = player_a ? "A" : "B"
-
+  def check_scores(player)
     taken_set = []
     open_scores = []
 
@@ -129,7 +127,7 @@ class DotsBoxes
     open_scores.each do |open|
       if taken_set.contains(open)
         score_counter += 1
-        score_dict[open] = player_a
+        score_dict[open] = player
       end
     end
 
@@ -157,10 +155,12 @@ class DotsBoxes
   def get_open_plays
     open_plays = []
     play_dict.each do |play|
-      if play_dict[play].eql?(0)
-        open_plays << play
+      #puts "Play from play_dict: #{play_dict[play[0]]}"
+      if play_dict[play[0]].eql?(0)
+        open_plays << play[0]
       end
     end
+    #puts "Open plays frome DotsBoxes object: #{open_plays}"
     return open_plays
   end
 
@@ -183,6 +183,9 @@ class HumanPlayer
       valid_play = game.make_play(*play, player)
       if valid_play
         puts "Jugada valida"
+        break;
+      else
+        puts "Ya hiciste esa jugada"
       end
     end
   end
@@ -196,48 +199,76 @@ class AlphaBetaPlayer
   end
 
   def alphabeta(game, play, depth, alpha, beta, player_a)
-    return (game.current_player_score(@player) - game.current_player_score(!@player), play) if game.is_over || depth == 0
-
-    value = player_a ? -Float::INFINITY : Float::INFINITY
-    game.get_open_plays.each do |move|
-      new_game = game.dup  # Deep copy of the game state
-      old_score = game.current_player_score(player_a)
-      new_game.make_play(*move, player_a)
-      new_score = game.current_player_score(player_a)
-
-      if new_score == old_score
-        new_play_results = alphabeta(new_game, move, depth - 1, alpha, beta, !player_a)
-      else
-        new_play_results = alphabeta(new_game, move, depth - 1, alpha, beta, player_a)
-      end
-
-      if player_a
-        value = [value, new_play_results[0]].max
-        alpha = [alpha, value].max
-      else
-        value = [value, new_play_results[0]].min
-        beta = [beta, value].min
-      end
-
-      break if beta <= alpha
+    if game.is_over() || depth == 0
+        return [game.a_score - game.b_score, play]
     end
-
-    return value, play
+    if player_a.eql?("A")
+        value = -Float::INFINITY
+        game.get_open_plays().each do |move|
+            new_game = game.dup
+            old_score = new_game.a_score
+            new_game.make_play(*move, "A")
+            new_score = new_game.a_score
+            if new_score == old_score
+                new_play_results = alphabeta(new_game, move, depth - 1, alpha, beta, "B")
+            else
+                new_play_results = alphabeta(new_game, move, depth - 1, alpha, beta, "A")
+            end
+            if value >= new_play_results[0]
+                play = move
+                value = new_play_results[0]
+            end
+            alpha = [alpha, value].max
+            if alpha >= beta
+                break
+            end
+        end
+        return [value, play]
+    else
+        value = Float::INFINITY
+        game.get_open_plays().each do |move|
+            new_game = game.dup
+            old_score = new_game.b_score
+            new_game.make_play(*move, "B")
+            new_score = new_game.b_score
+            if new_score == old_score
+                move_results = alphabeta(new_game, move, depth - 1, alpha, beta, "A")
+            else
+                move_results = alphabeta(new_game, move, depth - 1, alpha, beta, "B")
+            end
+            if value <= move_results[0]
+                play = move
+                value = move_results[0]
+            end
+            beta = [beta, value].min
+            if beta <= alpha
+                break
+            end
+        end
+        return [value, play]
+    end
   end
 
   def make_play(game)
     start_time = Time.now
 
     play_space_size = game.get_open_plays.size
-    play = game.get_open_plays.sample if play_space_size == 1
-    game.make_play(*play, @player) if play
+    #puts "Open plays: #{game.get_open_plays}"
+    if play_space_size == 1
+      play = game.get_open_plays.sample
+      game.make_play(*play, @player) if play
+
+      return
+    end
 
     depth = Math.log(19000, play_space_size).floor
 
-    play = alphabeta(game, (0, 0), depth, -Float::INFINITY, Float::INFINITY, @player)[1]
+    play = alphabeta(game, [0, 0], depth, -Float::INFINITY, Float::INFINITY, @player)[1]
     elapsed = Time.now - start_time
 
-    play = game.get_open_plays.sample unless play  # Fallback random move
+    puts "Sample: #{game.get_open_plays}\nPlay from alphabeta: #{play}"
+    play = game.get_open_plays.sample if play.eql?([0,0])  # Fallback random move
+    puts "Play: #{play}"
 
     game.make_play(*play, @player)
 
@@ -258,10 +289,35 @@ class Game
 
   def play_game
     game = DotsBoxes.new(rows, columns)
-    game.render()
+    game.render
     game.check_scores(player_a)
     player = HumanPlayer.new("A")
-    player.make_play(game)
+    playerAI = AlphaBetaPlayer.new("B")
+
+    while(!game.is_over)
+      while(!game.is_over)
+        old_score = game.a_score
+        player.make_play(game)
+        game.render
+        if old_score.eql?(game.a_score)
+          puts "Termina tu turno"
+          break;
+        end
+      end
+
+      while(!game.is_over)
+        old_score = game.b_score
+        playerAI.make_play(game)
+        game.render
+        puts "Iteracion old_score: #{old_score} board_score: #{game.b_score}"
+        if old_score.eql?(game.b_score)
+          puts "Termina el turno de la IA"
+          break;
+        end
+      end
+    end
+
+    puts game.a_score.eql?(game.b_score) ? "Empate" : (game.a_score > game.b_score) ? "Gana A" : "Gana B"
   end
 end
 
