@@ -1,7 +1,15 @@
+class Object
+  def deep_clone
+    Marshal::load(Marshal::dump(self))
+  end
+end
+
 class DotsBoxes
-  attr_accessor :rows, :columns, :play_dict, :score_dict
-  attr_accessor :a_score, :b_score
+  attr_accessor :rows, :columns, :play_dict, :score_dict, :a_score, :b_score
+
   def initialize(rows, columns)
+    @a_score = 0
+    @b_score = 0
     @rows = rows
     @columns = columns
 
@@ -13,14 +21,14 @@ class DotsBoxes
     end
 
     (rows-1).times do |row|
-      (columns).times do |column|
+      columns.times do |column|
         @play_dict[[column+(row*columns), column+columns+(row*columns)]] = 0
       end
     end
 
     @score_dict = {}
-    rows.times do |row|
-      columns.times do |column|
+    (rows-1).times do |row|
+      (columns-1).times do |column|
         box = [[column + (row*columns), column+(row*columns)+1]]
         box << [box[0][0], box[0][1] + columns-1]
         box << [box[0][0] +1, box[0][1] + columns]
@@ -28,9 +36,6 @@ class DotsBoxes
         @score_dict[box] = 0
       end
     end
-
-    @a_score = 0
-    @b_score = 0
   end
 
   def render_row(row_number)
@@ -42,24 +47,21 @@ class DotsBoxes
       if play_dict[[left,right]].eql?(0)
         str_row << sprintf("%3d", left) << "   "
       else
-        str_row << sprintf("%3d", left) << " - "
+        str_row << sprintf("%3d -", left) << " "
       end
       left = right
       right = left + 1
     end
-    str_row << " #{left} "
+    str_row << sprintf("%3d", left)
     puts str_row
   end
 
-  def render_vertical(upper_left, upper_right)
-    str_vertical = ""
-    if play_dict[[upper_left, upper_right]].eql?(0)
-      str_vertical << "   "
+  def render_vertical(upper_left, bottom_left)
+    if play_dict[[upper_left, bottom_left]] == 0
+      print("   ")
     else
-      str_vertical << " | "
+      print("  |")
     end
-
-    return str_vertical
   end
 
   def render_middle_row(row_number)
@@ -70,8 +72,8 @@ class DotsBoxes
     str_middle_row = ""
     str_vertical = ""
 
-    columns.times do
-      str_vertical = render_vertical(upper_left, upper_right)
+    (columns-1).times do
+      render_vertical(upper_left, bottom_left)
 
       top = [upper_left, upper_right]
       left = [upper_left, bottom_left]
@@ -79,11 +81,10 @@ class DotsBoxes
       bottom = [bottom_left, bottom_right]
 
       score = score_dict[[top, left, right, bottom]]
-
       if score.eql?(0)
-        str_middle_row << "  "
+        print ("   ")
       else
-        str_middle_row << " " + score + " "
+        print (" " + score + " ")
       end
 
       upper_left, bottom_left = upper_right, bottom_right
@@ -91,48 +92,32 @@ class DotsBoxes
       bottom_right += 1
     end
 
-    puts str_middle_row
     render_vertical(upper_left, bottom_left)
+    puts
   end
 
   def render
-    rows.times do |row_number|
-      #puts "Iteration #{row_number}"
+    (rows-1).times do |row_number|
       render_row(row_number)
       render_middle_row(row_number)
     end
-
-    puts "Score dict: #{score_dict}\n\nPlay dict: #{play_dict}"
+    render_row(rows-1)
+    puts
   end
 
   def check_scores(player)
-    taken_set = []
-    open_scores = []
+    taken_set = play_dict.select { |i| @play_dict[i] == 1 }.keys.to_set
+    open_scores = score_dict.select { |i| @score_dict[i] == 0 }.keys.to_a
 
-    play_dict.each do |pair|
-      #puts play_dict[pair]
-      if play_dict[pair].eql?(0)
-        taken_set << pair
-      end
-    end
-
-    score_dict.each do |element|
-      if score_dict[element].eql?(0)
-        open_scores << element
-      end
-    end
 
     score_counter = 0
-
-    open_scores.each do |open|
-      if taken_set.contains(open)
+    open_scores.each do |box|
+      if box.to_set.subset?(taken_set)
         score_counter += 1
-        score_dict[open] = player
+        @score_dict[box] = player
       end
     end
-
-    return score_counter
-    #puts taken_set.inspect
+    score_counter
   end
 
   def make_play(start_point, end_point, player)
@@ -142,25 +127,21 @@ class DotsBoxes
 
     play_dict[[start_point, end_point]] = 1
     score = check_scores(player)
-
     if player.eql?("A")
-      a_score = a_score.to_i + score
+      @a_score = a_score.to_i + score.to_i
     else
-      b_score = b_score.to_i + score
+      @b_score = b_score.to_i + score.to_i
     end
-
     return true
   end
 
   def get_open_plays
     open_plays = []
     play_dict.each do |play|
-      #puts "Play from play_dict: #{play_dict[play[0]]}"
       if play_dict[play[0]].eql?(0)
         open_plays << play[0]
       end
     end
-    #puts "Open plays frome DotsBoxes object: #{open_plays}"
     return open_plays
   end
 
@@ -182,7 +163,7 @@ class HumanPlayer
 
       valid_play = game.make_play(*play, player)
       if valid_play
-        puts "Jugada valida"
+        puts "Jugador #{player} jugo: #{play[0]}, #{play[1]}"
         break;
       else
         puts "Ya hiciste esa jugada"
@@ -200,118 +181,115 @@ class AlphaBetaPlayer
 
   def alphabeta(game, play, depth, alpha, beta, player_a)
     if game.is_over() || depth == 0
-        return [game.a_score - game.b_score, play]
+      return [game.a_score - game.b_score, play]
     end
     if player_a.eql?("A")
-        value = -Float::INFINITY
-        game.get_open_plays().each do |move|
-            new_game = game.dup
-            old_score = new_game.a_score
-            new_game.make_play(*move, "A")
-            new_score = new_game.a_score
-            if new_score == old_score
-                new_play_results = alphabeta(new_game, move, depth - 1, alpha, beta, "B")
-            else
-                new_play_results = alphabeta(new_game, move, depth - 1, alpha, beta, "A")
-            end
-            if value >= new_play_results[0]
-                play = move
-                value = new_play_results[0]
-            end
-            alpha = [alpha, value].max
-            if alpha >= beta
-                break
-            end
+      value = -Float::INFINITY
+      game.get_open_plays().each do |move|
+        new_game = game.deep_clone
+        old_score = new_game.a_score
+        new_game.make_play(*move, "A")
+        new_score = new_game.a_score
+        if new_score == old_score
+          new_play_results = alphabeta(new_game, move, depth - 1, alpha, beta, "B")
+        else
+          new_play_results = alphabeta(new_game, move, depth - 1, alpha, beta, "A")
         end
-        return [value, play]
+        if value >= new_play_results[0]
+          play = move
+          value = new_play_results[0]
+        end
+        alpha = [alpha, value].max
+        if alpha >= beta
+          break
+        end
+      end
+      return [value, play]
     else
-        value = Float::INFINITY
-        game.get_open_plays().each do |move|
-            new_game = game.dup
-            old_score = new_game.b_score
-            new_game.make_play(*move, "B")
-            new_score = new_game.b_score
-            if new_score == old_score
-                move_results = alphabeta(new_game, move, depth - 1, alpha, beta, "A")
-            else
-                move_results = alphabeta(new_game, move, depth - 1, alpha, beta, "B")
-            end
-            if value <= move_results[0]
-                play = move
-                value = move_results[0]
-            end
-            beta = [beta, value].min
-            if beta <= alpha
-                break
-            end
+      value = Float::INFINITY
+      game.get_open_plays().each do |move|
+        new_game = game.deep_clone
+        old_score = new_game.b_score
+        new_game.make_play(*move, "B")
+        new_score = new_game.b_score
+        if new_score == old_score
+          move_results = alphabeta(new_game, move, depth - 1, alpha, beta, "A")
+        else
+          move_results = alphabeta(new_game, move, depth - 1, alpha, beta, "B")
         end
-        return [value, play]
+        if value <= move_results[0]
+          play = move
+          value = move_results[0]
+        end
+        beta = [beta, value].min
+        if beta <= alpha
+          break
+        end
+      end
+      return [value, play]
     end
   end
 
   def make_play(game)
-    start_time = Time.now
-
     play_space_size = game.get_open_plays.size
-    #puts "Open plays: #{game.get_open_plays}"
     if play_space_size == 1
       play = game.get_open_plays.sample
-      game.make_play(*play, @player) if play
+      game.make_play(*play, player) if play
 
       return
     end
 
     depth = Math.log(19000, play_space_size).floor
-
-    play = alphabeta(game, [0, 0], depth, -Float::INFINITY, Float::INFINITY, @player)[1]
-    elapsed = Time.now - start_time
-
-    puts "Sample: #{game.get_open_plays}\nPlay from alphabeta: #{play}"
+    play = alphabeta(game, [0, 0], depth, -Float::INFINITY, Float::INFINITY, player)[1]
     play = game.get_open_plays.sample if play.eql?([0,0])  # Fallback random move
-    puts "Play: #{play}"
 
-    game.make_play(*play, @player)
+    game.make_play(*play, player)
 
-    player_name = @player ? 'A' : 'B'
-    puts "Player #{player_name}'s move: #{play[0]}, #{play[1]}"
-    puts "Time elapsed to make move: #{elapsed}"
+    puts "Jugador #{player} jugo: #{play[0]}, #{play[1]}"
   end
 end
 
 class Game
   attr_accessor :player_a, :player_b, :rows, :columns
   def initialize(player_a, player_b, rows=5, columns=5)
-    @player_a = player_a
-    @player_b = player_b
+    @player_a = HumanPlayer.new(player_a)
+    @player_b = AlphaBetaPlayer.new(player_b)
     @rows = rows
     @columns = columns
   end
 
   def play_game
     game = DotsBoxes.new(rows, columns)
+    turno = ""
+
+    while true
+      puts "Desea comenzar usted? (s/n)"
+      resp = gets.chomp.downcase
+      if resp.eql?("s") || resp.eql?("n")
+        turno = resp.eql?("s") ? "A" : "B"
+        break
+      end
+    end
+
     game.render
-    game.check_scores(player_a)
-    player = HumanPlayer.new("A")
-    playerAI = AlphaBetaPlayer.new("B")
 
     while(!game.is_over)
-      while(!game.is_over)
+      while(!game.is_over && turno.eql?("A"))
         old_score = game.a_score
-        player.make_play(game)
+        @player_a.make_play(game)
         game.render
         if old_score.eql?(game.a_score)
-          puts "Termina tu turno"
+          turno = "B"
           break;
         end
       end
 
-      while(!game.is_over)
+      while(!game.is_over && turno.eql?("B"))
         old_score = game.b_score
-        playerAI.make_play(game)
+        @player_b.make_play(game)
         game.render
-        puts "Iteracion old_score: #{old_score} board_score: #{game.b_score}"
         if old_score.eql?(game.b_score)
-          puts "Termina el turno de la IA"
+          turno = "A"
           break;
         end
       end
@@ -321,10 +299,14 @@ class Game
   end
 end
 
-puts "Ingresa la cantidad de filas"
-game_rows = gets.chomp.to_i
-puts "Ingresa la cantidad de columnas"
-game_columns = gets.chomp.to_i
+def main
+  puts "Ingresa la cantidad de filas"
+  game_rows = gets.chomp.to_i
+  puts "Ingresa la cantidad de columnas"
+  game_columns = gets.chomp.to_i
 
-game = Game.new("A", "B", game_rows, game_columns)
-game.play_game
+  game = Game.new("A", "B", game_rows, game_columns)
+  game.play_game
+end
+
+main
